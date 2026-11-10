@@ -1,0 +1,77 @@
+name: V2 existing-app baseline observation
+'on':
+  workflow_call:
+    inputs:
+      api-origin:
+        required: true
+        type: string
+      workspace-id:
+        required: true
+        type: string
+      baseline-id:
+        required: true
+        type: string
+      request-sha256:
+        required: true
+        type: string
+      environment:
+        required: true
+        type: string
+      trusted-public-keys:
+        required: true
+        type: string
+permissions:
+  contents: read
+  id-token: write
+  attestations: read
+jobs:
+  observe:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    environment: ${{ inputs.environment }}
+    steps:
+    - name: Check out pinned observer source
+      uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      with:
+        repository: ${{ job.workflow_repository }}
+        ref: ${{ job.workflow_sha }}
+        path: v2-runner
+        persist-credentials: false
+        sparse-checkout: 'customer_runner
+
+          backend/contracts'
+        fetch-depth: 1
+    - name: Install the reviewed GitHub attestation verifier
+      id: gh_verifier
+      continue-on-error: true
+      shell: bash
+      run: 'set -euo pipefail
+
+        archive="${RUNNER_TEMP}/v2-gh.tar.gz"
+
+        curl --fail --silent --show-error --location --proto ''=https'' --tlsv1.2 https://github.com/cli/cli/releases/download/v2.103.3/gh_2.103.3_linux_amd64.tar.gz
+        --output "${archive}"
+
+        echo "4c806978ffce1cec70853302a56d70ac6da4f19bae7adca4e1a8ab00633dd91d  ${archive}" | sha256sum --check --strict
+
+        mkdir -p "${RUNNER_TEMP}/v2-gh"
+
+        tar --extract --gzip --file "${archive}" --directory "${RUNNER_TEMP}/v2-gh" --no-same-owner
+
+        echo "${RUNNER_TEMP}/v2-gh/gh_2.103.3_linux_amd64/bin" >> "${GITHUB_PATH}"
+
+        '
+    - name: Verify image provenance and observe historical health
+      env:
+        V2_API_ORIGIN: ${{ inputs.api-origin }}
+        V2_WORKSPACE_ID: ${{ inputs.workspace-id }}
+        V2_BASELINE_ID: ${{ inputs.baseline-id }}
+        V2_REQUEST_SHA256: ${{ inputs.request-sha256 }}
+        V2_TRUSTED_PUBLIC_KEYS: ${{ inputs.trusted-public-keys }}
+        V2_JOB_WORKFLOW_SHA: ${{ job.workflow_sha }}
+        V2_JOB_WORKFLOW_REPOSITORY: ${{ job.workflow_repository }}
+        V2_GH_TOKEN: ${{ github.token }}
+        V2_GH_VERIFIER_READY: ${{ steps.gh_verifier.outcome == 'success' }}
+      shell: bash
+      run: python3 -I -c "import runpy, sys; sys.path.insert(0, 'v2-runner'); runpy.run_module('customer_runner.baseline', run_name='__main__')"

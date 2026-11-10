@@ -1,0 +1,54 @@
+name: V2 customer Reader preflight
+
+'on':
+  workflow_call:
+    inputs:
+      api-origin:
+        required: true
+        type: string
+      workspace-id:
+        required: true
+        type: string
+      connection-id:
+        required: true
+        type: string
+      generation:
+        required: true
+        type: string
+      configuration-sha256:
+        required: true
+        type: string
+      environment:
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  preflight:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    environment: ${{ inputs.environment }}
+    timeout-minutes: 10
+    steps:
+      - name: Load the pinned reusable workflow's own runner code
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: v2-runner
+          persist-credentials: false
+          sparse-checkout: customer_runner
+          fetch-depth: 1
+      - name: Authenticate and check Reader access inside the customer runner
+        env:
+          V2_API_ORIGIN: ${{ inputs.api-origin }}
+          V2_WORKSPACE_ID: ${{ inputs.workspace-id }}
+          V2_CONNECTION_ID: ${{ inputs.connection-id }}
+          V2_GENERATION: ${{ inputs.generation }}
+          V2_CONFIGURATION_SHA256: ${{ inputs.configuration-sha256 }}
+          V2_JOB_WORKFLOW_SHA: ${{ job.workflow_sha }}
+          V2_JOB_WORKFLOW_REPOSITORY: ${{ job.workflow_repository }}
+        run: python3 -I v2-runner/customer_runner/preflight.py

@@ -1,0 +1,70 @@
+name: V2 customer exact plan
+'on':
+  workflow_call:
+    inputs:
+      api-origin:
+        required: true
+        type: string
+      workspace-id:
+        required: true
+        type: string
+      plan-request-id:
+        required: true
+        type: string
+      request-sha256:
+        required: true
+        type: string
+      environment:
+        required: true
+        type: string
+permissions:
+  contents: read
+  id-token: write
+  attestations: read
+jobs:
+  plan:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    environment: ${{ inputs.environment }}
+    steps:
+      - name: Check out only the pinned publisher implementation
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: v2-runner
+          persist-credentials: false
+          sparse-checkout: |
+            customer_runner
+            backend/contracts
+          fetch-depth: 1
+      - name: Install the pinned OpenTofu engine
+        uses: opentofu/setup-opentofu@a1320f892987e89d278cc92dc5adc984fb93aca4
+        with:
+          tofu_version: 1.13.2
+          tofu_wrapper: false
+      - name: Install the reviewed GitHub attestation verifier
+        id: gh_verifier
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive="${RUNNER_TEMP}/v2-gh.tar.gz"
+          curl --fail --silent --show-error --location --proto '=https' --tlsv1.2 https://github.com/cli/cli/releases/download/v2.103.3/gh_2.103.3_linux_amd64.tar.gz --output "${archive}"
+          echo "4c806978ffce1cec70853302a56d70ac6da4f19bae7adca4e1a8ab00633dd91d  ${archive}" | sha256sum --check --strict
+          mkdir -p "${RUNNER_TEMP}/v2-gh"
+          tar --extract --gzip --file "${archive}" --directory "${RUNNER_TEMP}/v2-gh" --no-same-owner
+          echo "${RUNNER_TEMP}/v2-gh/gh_2.103.3_linux_amd64/bin" >> "${GITHUB_PATH}"
+      - name: Generate and protect the exact plans
+        env:
+          V2_API_ORIGIN: ${{ inputs.api-origin }}
+          V2_WORKSPACE_ID: ${{ inputs.workspace-id }}
+          V2_PLAN_ID: ${{ inputs.plan-request-id }}
+          V2_REQUEST_SHA256: ${{ inputs.request-sha256 }}
+          V2_JOB_WORKFLOW_SHA: ${{ job.workflow_sha }}
+          V2_JOB_WORKFLOW_REPOSITORY: ${{ job.workflow_repository }}
+          V2_GH_TOKEN: ${{ github.token }}
+          V2_GH_VERIFIER_READY: ${{ steps.gh_verifier.outcome == 'success' }}
+        shell: bash
+        run: python3 -I -c "import runpy, sys; sys.path.insert(0, 'v2-runner'); runpy.run_module('customer_runner.plan', run_name='__main__')"

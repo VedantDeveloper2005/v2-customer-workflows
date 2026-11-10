@@ -1,0 +1,59 @@
+name: V2 read-only execution rehearsal
+'on':
+  workflow_call:
+    inputs:
+      api-origin:
+        required: true
+        type: string
+      workspace-id:
+        required: true
+        type: string
+      rehearsal-id:
+        required: true
+        type: string
+      request-sha256:
+        required: true
+        type: string
+      environment:
+        required: true
+        type: string
+      trusted-public-keys:
+        required: true
+        type: string
+permissions:
+  contents: read
+  id-token: write
+jobs:
+  rehearse:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    environment: ${{ inputs.environment }}
+    steps:
+      - name: Check out the pinned publisher implementation
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: v2-runner
+          persist-credentials: false
+          sparse-checkout: |
+            customer_runner
+            backend/contracts
+          fetch-depth: 1
+      - name: Install the pinned inspection engine
+        uses: opentofu/setup-opentofu@a1320f892987e89d278cc92dc5adc984fb93aca4
+        with:
+          tofu_version: 1.13.2
+          tofu_wrapper: false
+      - name: Verify signed approvals and exact private artifact versions
+        env:
+          V2_API_ORIGIN: ${{ inputs.api-origin }}
+          V2_WORKSPACE_ID: ${{ inputs.workspace-id }}
+          V2_REHEARSAL_ID: ${{ inputs.rehearsal-id }}
+          V2_REQUEST_SHA256: ${{ inputs.request-sha256 }}
+          V2_TRUSTED_PUBLIC_KEYS: ${{ inputs.trusted-public-keys }}
+          V2_JOB_WORKFLOW_SHA: ${{ job.workflow_sha }}
+          V2_JOB_WORKFLOW_REPOSITORY: ${{ job.workflow_repository }}
+        shell: bash
+        run: python3 -I -c "import runpy, sys; sys.path.insert(0, 'v2-runner'); runpy.run_module('customer_runner.rehearsal', run_name='__main__')"
