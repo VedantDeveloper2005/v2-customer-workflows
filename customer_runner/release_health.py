@@ -136,7 +136,7 @@ def metrics(payload, target, start, minutes, policy):
     except (ValueError, KeyError, TypeError, AttributeError, OverflowError): raise HealthError("TELEMETRY_UNAVAILABLE") from None
 
 
-def observe(manifest, policy, digest, access, *, request, fetch_probe=probe, checkpoint=lambda: None,
+def observe(manifest, policy, digest, access, *, request, fetch_probe=probe, checkpoint=lambda: None, resolve_site=site,
             observation_id=None, now=lambda: datetime.now(timezone.utc), monotonic=time.monotonic, sleep=time.sleep):
     """Wait a real stabilization window; never treat missing metrics as zero."""
     samples = 0
@@ -145,7 +145,7 @@ def observe(manifest, policy, digest, access, *, request, fetch_probe=probe, che
         release_safety.validate(policy)
         observation_id = observation_id or uuid4().hex
         if not isinstance(observation_id, str) or not re.fullmatch(r"[0-9a-f]{32}", observation_id): raise HealthError("TARGET_REJECTED")
-        host = site(manifest, digest, request, access)
+        host = resolve_site(manifest, digest, request, access)
         started = now().timestamp(); clock = monotonic()
         start = math.ceil(started / 60) * 60
         end = start + policy["stabilization_minutes"] * 60
@@ -187,7 +187,7 @@ def observe(manifest, policy, digest, access, *, request, fetch_probe=probe, che
                         elapsed = monotonic() - clock
                         if elapsed < policy["stabilization_minutes"] * 60 or abs((now().timestamp() - started) - elapsed) > 5 or now().timestamp() > deadline: raise HealthError("TIMING_UNAVAILABLE")
                         checkpoint()
-                        if site(manifest, digest, request, access) != host: raise HealthError("ACTIVE_IMAGE_CHANGED", "failed")
+                        if resolve_site(manifest, digest, request, access) != host: raise HealthError("ACTIVE_IMAGE_CHANGED", "failed")
                         if now().timestamp() > deadline or abs((now().timestamp() - started) - (monotonic() - clock)) > 5: raise HealthError("TIMING_UNAVAILABLE")
                         result = {"outcome": "verified", "observation_id": observation_id, "image_sha256": digest, "policy_sha256": release_safety.digest(policy),
                             "checks": ["synthetic", "dependencies", "azure-monitor"], "samples": samples, "window_start": utc_text(start), "window_end": utc_text(end), "telemetry": telemetry, "probe_chain_sha256": chain}
