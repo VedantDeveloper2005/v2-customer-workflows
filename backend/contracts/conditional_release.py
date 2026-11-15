@@ -17,6 +17,7 @@ LIVE_PLAN = "v2.conditional-release-plan.v2"
 DECISION = "v2.conditional-release-decision.v1"
 LIVE_DECISION = "v2.conditional-release-decision.v2"
 GRANT = "v2.conditional-release-grant.v1"
+WRITE_CHECK = "v2.conditional-release-write-check.v1"
 PROMOTION = "v2.conditional-release-promotion.v1"
 SHA256 = r"[a-f0-9]{64}"
 TAG = r'"0x[0-9A-Fa-f]{8,32}"'

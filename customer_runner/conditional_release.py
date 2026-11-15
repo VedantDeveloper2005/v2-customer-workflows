@@ -116,6 +116,7 @@ def execute(api, trusted, environ, *, issue, request, make_blob=PointerBlob, hea
     workflow_repo = source["workflow_ref"].split("/.github/", 1)[0]
     workflow_sha = source["workflow_ref"].rsplit("@", 1)[1]
     require(binding["trusted_keys_sha256"] == contract.digest(trusted) and binding["api_origin"] == environ["V2_API_ORIGIN"]
+            and binding.get("write_protocol") == contract.WRITE_CHECK
             and binding["release_id"] == environ["V2_RELEASE_ID"] and scope["workspace_id"] == environ["V2_WORKSPACE_ID"]
             and proofs["plan"]["sha256"] == environ["V2_REQUEST_SHA256"]
             and workflow_repo == environ["V2_JOB_WORKFLOW_REPOSITORY"] and workflow_sha == environ["V2_JOB_WORKFLOW_SHA"]
@@ -149,7 +150,7 @@ def execute(api, trusted, environ, *, issue, request, make_blob=PointerBlob, hea
         operation_id = str(uuid4())
         evidence = {"pointer": snapshot(actual), "origin_evidence_sha256": p["origin_evidence_sha256"],
                     "execution_request_sha256": p["artifacts"]["execution_request_sha256"], **hashes}
-        result = api(operation, operation_id=operation_id, **evidence)
+        result = api(operation, operation_id=operation_id, write_protocol=contract.WRITE_CHECK, **evidence)
         require(result["status"] == "authorized")
         proofs["grant"] = result["grant"]
         verify_signatures(proofs, trusted)
@@ -157,6 +158,8 @@ def execute(api, trusted, environ, *, issue, request, make_blob=PointerBlob, hea
         require(grant["operation"] == operation and grant["operation_id"] == operation_id)
         live_origins(p, binding, arm_access, request)
         require(blob.read() == actual, "POINTER_STALE")
+        checked = api(operation + "-check", grant_sha256=proofs["grant"]["sha256"])
+        require(checked == {"status": "checked", "grant_sha256": proofs["grant"]["sha256"]})
         observation = {**{key: evidence[key] for key in ("pointer", "origin_evidence_sha256", "execution_request_sha256")},
             "scope": scope, "source": source, "run_id": run_id, "run_attempt": run_attempt,
             "write_control_generation": started["write_control_generation"], "blocked": False}
