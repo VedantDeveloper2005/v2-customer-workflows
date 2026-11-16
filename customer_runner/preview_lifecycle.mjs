@@ -102,6 +102,12 @@ export function verifyOwnedStack(plan, stack, app) {
   }
 }
 
+export function verifyProvisioning(plan, stack, app) {
+  requireCondition(String(app?.properties?.provisioningState).toLowerCase() === "succeeded"
+    && String(stack?.properties?.provisioningState).toLowerCase() === "succeeded", "Azure provisioning did not succeed.");
+  verifyOwnedStack(plan, stack, app);
+}
+
 async function azure(args, timeout = 180000) {
   const { stdout } = await command("az", [...args, "--only-show-errors", "--output", "json"],
     { encoding: "utf8", timeout, maxBuffer: 2 ** 20 });
@@ -145,7 +151,8 @@ async function healthCheck(plan, read) {
         const response = await fetch(`https://${hostname}${target.health_path}`, { redirect: "error", signal: AbortSignal.timeout(8000) });
         await response.body?.cancel();
         const report = await read(`${target.resource_id}/revisions/${revision}`, apiApp);
-        if (response.ok && report?.properties?.healthState === "Healthy" && report.properties.runningState === "Running"
+        if (response.ok && String(report?.properties?.healthState).toLowerCase() === "healthy"
+            && String(report?.properties?.runningState).toLowerCase() === "running"
             && app.properties.latestReadyRevisionName === revision) return hostname;
       } catch {
         // A newly provisioned app may still be starting.
@@ -180,9 +187,7 @@ async function planning(plan, file, env, phase) {
     ...Object.entries(resourceTags(plan)).map(([key, value]) => `${key}=${value}`)], 420000);
   const app = await read(plan.target.resource_id, apiApp);
   const stack = await read(plan.target.stack_id, apiStack);
-  requireCondition(app?.properties?.provisioningState === "Succeeded" && stack?.properties?.provisioningState === "Succeeded",
-    "Azure provisioning did not succeed.");
-  verifyOwnedStack(plan, stack, app);
+  verifyProvisioning(plan, stack, app);
   return { outcome: "healthy", hostname: await healthCheck(plan, read) };
 }
 
