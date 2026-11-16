@@ -1,0 +1,61 @@
+name: V2 customer preview lifecycle
+'on':
+  workflow_call:
+    inputs:
+      api-origin: { required: true, type: string }
+      workspace-id: { required: true, type: string }
+      project-id: { required: true, type: string }
+      request-id: { required: false, type: string }
+      request-sha256: { required: false, type: string }
+      what-if-sha256: { required: false, type: string }
+      operation: { required: true, type: string }
+      environment: { required: true, type: string }
+      public-keys: { required: true, type: string }
+permissions:
+  contents: read
+  id-token: write
+  packages: read
+  attestations: read
+  pull-requests: read
+jobs:
+  lifecycle:
+    if: >-
+      (github.event_name == 'schedule' && inputs.operation == 'queue') ||
+      (github.event_name == 'workflow_dispatch' && (inputs.operation == 'plan' || inputs.operation == 'apply'))
+    runs-on: ubuntu-24.04
+    environment: ${{ inputs.environment }}
+    timeout-minutes: 18
+    steps:
+      - name: Check out the pinned publisher runner
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          persist-credentials: false
+          sparse-checkout: customer_runner
+      - name: Sign in to Azure with preview planner identity
+        if: inputs.operation == 'plan'
+        uses: azure/login@8216e11d8cd9b42fe925c852af8e76311ff067ac
+        with:
+          client-id: ${{ vars.V2_PREVIEW_PLAN_CLIENT_ID }}
+          tenant-id: ${{ vars.V2_PREVIEW_AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.V2_PREVIEW_AZURE_SUBSCRIPTION_ID }}
+      - name: Sign in to Azure with scoped preview identity
+        if: inputs.operation != 'plan'
+        uses: azure/login@8216e11d8cd9b42fe925c852af8e76311ff067ac
+        with:
+          client-id: ${{ vars.V2_PREVIEW_APPLY_CLIENT_ID }}
+          tenant-id: ${{ vars.V2_PREVIEW_AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.V2_PREVIEW_AZURE_SUBSCRIPTION_ID }}
+      - name: Run the authorized preview operation
+        env:
+          V2_OPERATION: ${{ inputs.operation }}
+          V2_API_ORIGIN: ${{ inputs.api-origin }}
+          V2_WORKSPACE_ID: ${{ inputs.workspace-id }}
+          V2_PROJECT_ID: ${{ inputs.project-id }}
+          V2_REQUEST_ID: ${{ inputs.request-id }}
+          V2_REQUEST_SHA256: ${{ inputs.request-sha256 }}
+          V2_WHAT_IF_SHA256: ${{ inputs.what-if-sha256 }}
+          V2_PUBLIC_KEYS: ${{ inputs.public-keys }}
+          V2_GITHUB_TOKEN: ${{ github.token }}
+        run: node customer_runner/preview_lifecycle.mjs

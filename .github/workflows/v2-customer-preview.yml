@@ -1,0 +1,40 @@
+name: V2 customer preview requests
+'on':
+  workflow_call:
+    inputs:
+      api-origin:
+        required: true
+        type: string
+      workspace-id:
+        required: true
+        type: string
+      project-id:
+        required: true
+        type: string
+      environment:
+        required: true
+        type: string
+permissions:
+  contents: read
+  id-token: write
+jobs:
+  request:
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.id == github.event.repository.id
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    environment: ${{ inputs.environment }}
+    steps:
+      - name: Check out the pinned V2 publisher code
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          persist-credentials: false
+          sparse-checkout: customer_runner/preview_request.py
+          sparse-checkout-cone-mode: false
+      - name: Send the authenticated pull-request event
+        env:
+          V2_PREVIEW_API_ORIGIN: ${{ inputs.api-origin }}
+          V2_PREVIEW_WORKSPACE_ID: ${{ inputs.workspace-id }}
+          V2_PREVIEW_PROJECT_ID: ${{ inputs.project-id }}
+        run: python3 -I customer_runner/preview_request.py
